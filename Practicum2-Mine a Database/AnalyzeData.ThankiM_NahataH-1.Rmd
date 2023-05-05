@@ -1,0 +1,38 @@
+---
+title: "R Notebook"
+output: html_notebook
+author1: Mansi Pravin Thanki (thanki.m@northeastern.edu) 
+author2: Hardik Nahata (nahata.h@northeastern.edu)
+Date: 08/12/2022
+Course: CS5200
+Assignment: Practicum II (Mine Database) Part 3
+---
+```{r}
+library(DBI)
+library(RMySQL)
+library(sqldf)
+con2<-dbConnect(MySQL(),host="localhost",port=3306,dbname='pubmed',user="root",password="root12345")
+
+```
+
+
+# Top ten authors with the most publications.
+```{sql connection=con2}
+select authorid, firstName, lastName, number_of_articles from(
+select authorid, firstName, lastName, number_of_articles, 
+                          rank() over (order by  number_of_articles desc) rnk 
+                          from author_facts) t where t.rnk < 11 
+```
+
+
+# Top journal with the most articles per year.
+```{sql connection=con2}
+select title, publication_year, number_of_articles_per_year from (select distinct title, publication_year, number_of_articles_per_year,  
+                          rank() over (partition by publication_year order by number_of_articles_per_year desc) rnk 
+                          from journal_facts) t where t.rnk=1 and publication_year is not null
+```
+
+```{r}
+dbDisconnect(con2)
+```
+
