@@ -1,0 +1,331 @@
+---
+name: Mansi Pravin Thanki (002128043)
+title: "R Notebook"
+output:
+  pdf_document: default
+  html_document:
+    df_print: paged
+---
+
+
+```{r}
+library(XML)
+library(RSQLite)
+library(DBI)
+library(knitr)
+library(sqldf)
+```
+
+```{r}
+
+fpn = "Books-v3.xml"
+dbfn <- "Books.db"
+dbcon <- dbConnect(RSQLite::SQLite(), dbfn)
+#dbfpn = paste0(path, dbfn)
+```
+
+<!--
+
+##############################################################################################
+
+Q1: ERD Diagram
+-->
+
+[ERD](https://imgur.com/a/fkuQOwE)
+<div style="width: 640px; height: 480px; margin: 10px; position: relative;"><iframe allowfullscreen frameborder="0" style="width:640px; height:480px" src="https://lucid.app/documents/embedded/fd6a72e0-bbb0-46bd-ab9a-2b8136ad9ed7" id="55tC6xRlXmEk"></iframe></div>
+
+
+<blockquote class="imgur-embed-pub" lang="en" data-id="a/fkuQOwE" data-context="false" ><a href="//imgur.com/a/fkuQOwE"></a></blockquote><script async src="//s.imgur.com/min/embed.js" charset="utf-8"></script>
+
+```{r}
+#knitr::include_graphics(<blockquote class="imgur-embed-pub" lang="en" data-id="a/fkuQOwE" data-context="false" ><a href="//imgur.com/a/fkuQOwE"></a></blockquote><script async src="//s.imgur.com/min/embed.js" charset="utf-8"></script>)
+
+#knitr::include_graphics(<blockquote class="imgur-embed-pub" lang="en" data-id="a/fkuQOwE" data-context="false" ><a href="//imgur.com/a/fkuQOwE"></a></blockquote><script async src="//s.imgur.com/min/embed.js" charset="utf-8"></script>)
+
+#![](https://imgur.com/a/fkuQOwE)
+```
+
+
+```{r}
+# Reading the XML file and parse into DOM
+xmlDOM <- xmlParse(file = fpn)
+
+# get the root node of the DOM tree
+r <- xmlRoot(xmlDOM)
+
+```
+
+```{r}
+# get number of children of root 
+numbooks <- xmlSize(r)
+```
+
+
+<!--
+##############################################################################################
+Q2 Create a SQLite database that implements the schema
+-->
+
+```{sql connection=dbcon}
+DROP TABLE IF EXISTS Book
+```
+
+```{sql connection=dbcon}
+CREATE TABLE Book(
+bookid INT PRIMARY KEY,
+title TEXT,
+genre TEXT,
+price TEXT,
+edition INT,
+publish_date TEXT,
+description TEXT
+)
+```
+
+```{sql connection=dbcon}
+DROP TABLE IF EXISTS Author
+```
+
+```{sql connection=dbcon}
+CREATE TABLE Author(
+authorid INT PRIMARY KEY,
+authorName TEXT
+)
+```
+
+```{sql connection=dbcon}
+DROP TABLE IF EXISTS BookAuthorJunction
+```
+
+```{sql connection=dbcon}
+CREATE TABLE BookAuthorJunction(
+bookid INT,
+authorid INT,
+PRIMARY KEY (bookid,authorid)
+FOREIGN KEY (bookid) REFERENCES Book(bookid)
+FOREIGN KEY (authorid) REFERENCES Book(authorid)
+)
+
+```
+
+<!-- 
+##############################################################################################
+
+Q3 LOAD DATA
+
+-->
+
+```{r}
+books <- data.frame(bookid = vector(mode = "integer", length = numbooks),
+                      title = vector(mode = "character", length = numbooks),
+                      edition = vector(mode = "integer", length = numbooks),
+                      genre = vector(mode = "character", length = numbooks),
+                      price = vector(mode = "character", length = numbooks),
+                      publish_date = vector(mode = "character", length = numbooks),
+                      description = vector(mode = "character", length = numbooks))
+
+
+
+author <- data.frame(authorid = vector(mode = "integer"),
+                      authorName = vector(mode = "character")
+                      )
+
+authorBook_junction <- data.frame(authorid = vector(mode = "integer"),
+                      bookid = vector(mode = "integer")
+                      )
+commondata <- data.frame(bookid = vector(mode = "integer", length = numbooks),
+                         authorFn = vector(mode = "character", length=numbooks),
+                      title = vector(mode = "character", length = numbooks),
+                      edition = vector(mode = "integer", length = numbooks),
+                      genre = vector(mode = "character", length = numbooks),
+                      price = vector(mode = "character", length = numbooks),
+                      publish_date = vector(mode = "character", length = numbooks),
+                      description = vector(mode = "character", length = numbooks))
+
+```
+
+
+
+
+```{r}
+for(i in 1:numbooks)
+{
+  abook <- r[[i]]
+  
+  id <- xmlAttrs(abook)
+  
+  title <- xmlValue(abook[[2]])
+  if(xmlName(abook[[3]]) == "edition")
+  {
+    edition <- xmlValue(abook[[3]])
+    genre <- xmlValue(abook[[4]])
+    price <- xmlValue(abook[[5]])
+    publish_date <- xmlValue(abook[[6]])
+    description <- xmlValue(abook[[7]])
+  }
+  else
+  {
+    edition <- NULL
+    genre <- xmlValue(abook[[3]])
+    price <- xmlValue(abook[[4]])
+    publish_date <- xmlValue(abook[[5]])
+    description <- xmlValue(abook[[6]])}
+  
+  books[i,]$bookid <- id
+  books[i,]$edition <- edition
+  books[i,]$title <- title
+  books[i,]$genre <- genre
+  books[i,]$price <- price
+  books[i,]$publish_date <- publish_date
+  books[i,]$description <- description
+}
+
+books
+
+```
+
+# author table dataframe
+```{r}
+for(i in 1:numbooks)
+{
+  auth <- r[[i]]
+  id <- xmlAttrs(auth)
+  author_name <- xmlValue(auth[[1]])
+  
+  if (!(author_name %in% author$authorName)){
+  author[i,]$authorid <- i
+  
+  author[i,]$authorName <- author_name
+  }
+  
+}
+author_table <-na.omit(author)
+author_table
+
+```
+
+# common data frame
+```{r}
+for(i in 1:numbooks)
+{
+  abook <- r[[i]]
+  
+  id <- xmlAttrs(abook)
+  author <- xmlValue(abook[[1]])
+  title <- xmlValue(abook[[2]])
+  if(xmlName(abook[[3]]) == "edition")
+  {
+    edition <- xmlValue(abook[[3]])
+    genre <- xmlValue(abook[[4]])
+    price <- xmlValue(abook[[5]])
+    publish_date <- xmlValue(abook[[6]])
+    description <- xmlValue(abook[[7]])
+  }
+  else
+  {
+    edition <- NULL
+    genre <- xmlValue(abook[[3]])
+    price <- xmlValue(abook[[4]])
+    publish_date <- xmlValue(abook[[5]])
+    description <- xmlValue(abook[[6]])}
+  
+  commondata[i,]$bookid <- id
+  commondata[i,]$authorFn <- author
+  commondata[i,]$edition <- edition
+  commondata[i,]$title <- title
+  commondata[i,]$genre <- genre
+  commondata[i,]$price <- price
+  commondata[i,]$publish_date <- publish_date
+  commondata[i,]$description <- description
+}
+#as1$Values[match(as2$ID, as1$ID)] <- as2$Values
+commondata
+
+```
+# dataframe for junction table
+```{r connection =dbcon}
+df <- sqldf(c("select bookid, A.authorid
+    FROM commondata c
+    INNER JOIN author_table A ON 
+        c.authorFn = A.authorName"))
+
+df
+```
+
+```{r}
+commondata
+```
+
+<!--  
+##############################################################################################
+
+Q4 Transform data types as necessary and then save the data frames to the appropriate tables in the database using a strategy of your choice
+-->
+
+# using dbWriteTable for inserting data into Book, Author and BookAuthorJunction table
+```{r}
+dbWriteTable(dbcon,"Book",books,overwrite=T)
+```
+
+# Book table in database
+```{sql connection=dbcon}
+select * from Book
+```
+```{r}
+dbWriteTable(dbcon,"Author",author_table,overwrite=T)
+```
+
+```{sql connection=dbcon}
+select * from Author
+```
+
+```{r}
+dbWriteTable(dbcon,"BookAuthorJunction",df,overwrite=T)
+```
+
+```{sql connection=dbcon}
+select * from BookAuthorJunction
+```
+<!--
+##############################################################################################
+Q5
+-->
+
+# Q5.A
+# What is the number of genres have at least three books?
+```{sql connection=dbcon}
+SELECT COUNT(*)FROM (SELECT genre FROM Book 
+GROUP BY genre 
+HAVING count(bookid) >= 3)
+```
+
+# Q5.B
+# What is the oldest year in which a publication was published?
+```{sql connection=dbcon}
+SELECT MAX(strftime('%Y', publish_date)) AS OLDEST_BOOK_PUBLISH_YEAR 
+FROM book
+```
+
+# Q5.C
+# Find the number of books and average price for each genre.
+```{sql connection=dbcon}
+SELECT genre, COUNT(*) AS BookCount, AVG(price) AS Avg_Price
+FROM Book 
+GROUP BY genre
+```
+
+# Q5.D
+# List the title and author of all books that are less than 0.8*AVG or more than 1.2*AVG, where AVG is the average price of all books. As a predicate logic expression: { b : books(b) & (b.price < 0.8*AVG(books.price) | b.price > 1.2*AVG(books.price)) }
+
+```{sql connection=dbcon}
+SELECT b.title AS Title, a.authorName AS Author
+FROM book B inner join
+bookauthorjunction baj on b.bookid = baj.bookid
+inner join author a on a.authorid = baj.authorid
+WHERE (price > (SELECT AVG(price)*1.2 FROM book)) OR (price < (SELECT AVG(price)*0.8 FROM book))
+```
+
+```{r}
+dbDisconnect(dbcon)
+```
+

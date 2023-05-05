@@ -1,0 +1,28 @@
+---
+name: Mansi Pravin Thanki (002128043)
+title: "XML Assignment 1 Q2"
+output: html_notebook
+---
+```{r}
+library(XML)
+
+xmlFile <- "MansiThanki_xml_uml.xml"
+
+xmlObj <- xmlParse(xmlFile)
+xmlObjTree <- xmlTreeParse(xmlFile)
+```
+
+
+# Read the XML into R (with validation) and then use XPath to find the total number of visits for some page (pick one from your sample instances).  
+
+```{r}
+xpathEx <- "/log/Page[@pid=2]"
+page <- xpathSApply(xmlObj, xpathEx, xmlValue)
+
+xpathEx <- "count(/log/Visit[@pid_REF=2])"
+visitCount <- xpathSApply(xmlObj, xpathEx, xmlValue)
+
+print(paste0("Page/Url: ", page))
+print(paste0("visit count: ", visitCount))
+```
+

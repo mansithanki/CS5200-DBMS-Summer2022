@@ -1,0 +1,607 @@
+---
+author1: Mansi Pravin Thanki 
+#Email id: (thanki.m@northeastern.edu)
+
+author2: Hardik Nahata
+#Email id: (nahata.h@northeastern.edu)
+
+title: "R Notebook"
+output: html_notebook
+---
+
+```{r}
+rm(list = ls())
+library(DBI)
+library(RMySQL)
+library(sqldf)
+con<-dbConnect(MySQL(),host="localhost",port=3306,dbname='birdStrike',user="root",password="root12345")
+
+```
+
+
+```{sql connection=con}
+DROP TABLE IF EXISTS airports, conditions, incidents
+```
+
+
+
+```{sql connection=con}
+# aid is primary key in airports table
+# structured as per problem description in Q 1.B and Q 1.C
+
+CREATE TABLE  IF NOT EXISTS airports(
+aid INTEGER PRIMARY KEY NOT NULL AUTO_INCREMENT,
+airportName TEXT NOT NULL, 
+airportCode TEXT, 
+state TEXT NOT NULL);
+```
+
+```{sql connection=con}
+# Look up table for conditions column in incidents table
+# structured as per problem description in Q 1.D
+
+CREATE TABLE IF NOT EXISTS conditions (
+  cid integer PRIMARY KEY NOT NULL AUTO_INCREMENT,
+  weather_condition TEXT NOT NULL,
+  explanation TEXT 
+);
+
+```
+
+
+```{sql connection=con}
+#schema for incidents table
+# foreign key origin refers aid in airports
+# foreign key conditions refers cid in conditions
+# have put a check constraint on flightPhase so that future values inserted into table will be constrainted to the provided 4 values
+
+CREATE TABLE IF NOT EXISTS incidents(
+rid integer PRIMARY KEY NOT NULL AUTO_INCREMENT,
+flightDate DATE,
+origin INTEGER NOT NULL, 
+airline TEXT NOT NULL, 
+aircraft TEXT NOT NULL, 
+flightPhase TEXT NOT NULL, 
+altitude TEXT NOT NULL, 
+conditions INTEGER NOT NULL, 
+warning BOOLEAN,
+FOREIGN KEY (origin) REFERENCES airports(aid),
+FOREIGN KEY (conditions) REFERENCES conditions(cid),
+CHECK(flightPhase IN ('Inflight','Landing','Takeoff','Unknown'))
+
+);
+
+
+```
+
+
+
+<!-- ###############  READING DATA FROM CSV INTO R DATAFRAME ########################-->
+
+```{r}
+
+df_BirdStrikes <- read.csv("BirdStrikesData-V2.csv", sep = ",", quote = "\"",
+               header = TRUE,
+               stringsAsFactors = FALSE,
+               colClasses = c("integer","character","character","NULL","NULL","NULL","character","NULL","character","character",
+                             "character", "NULL","NULL","NULL","character","NULL", "character", "character", "NULL"))
+
+```
+
+
+
+
+<!-- ###################### PREPROCESSING FOR AIRPORT AND AIRLINE COLUMNS #########################-->
+
+```{r}
+# If the airport column does not contain any value, "UNKNOWN" value is assigned to it
+# If the airline column does not contain any value, "UNKNOWN" value is assigned to it
+# implemented as per requirements of Q. 2
+
+df_BirdStrikes$airport[df_BirdStrikes$airport==""]<-"UNKNOWN"
+df_BirdStrikes$airline[df_BirdStrikes$airline==""]<-"UNKNOWN"
+
+
+```
+
+
+
+<!-- ###################### PREPROCESSING: OMIT ROWS WITH NA VALUES #########################-->
+
+```{r}
+# Columns that do not contain any value are assigned with NA
+# na.omit() omits the rows which contain NA values
+# For testing that NA values have been omitted: 
+# Used lapply() that shows the number of rows with NA values. The output should be 0 since we removed rows with NA.
+# implemented as per requirements of Q. 2
+
+df_BirdStrikes[df_BirdStrikes==""]<-NA
+df_BirdStrikes<-na.omit(df_BirdStrikes)
+lapply(df_BirdStrikes,function(x) { length(which(is.na(x)))})
+```
+
+
+
+
+<!-- ############### PREPROCESSING: STAR * SYMBOL REMOVAL FROM AIRLINES NAME ################## -->
+
+```{r}
+# This code chunk is to remove the * mark from the end of names of airlines
+# This is a part of data cleaning process
+
+# regexpr finds the index of position of *
+p <- regexpr("\\*", df_BirdStrikes$airline)
+g <- grep("\\*",df_BirdStrikes$airline)
+
+# only remove the * from those strings in the vector df_BirdStrikes$airline that have it
+df_BirdStrikes$airline[g] <- substring(df_BirdStrikes$airline[g],1,p[g]-1)
+
+```
+
+
+
+
+<!-- ############### PROCESSING DATE IN FLIGHTDATE COLUMN ################################ -->
+
+```{r}
+# df_BirdStrikes contained date as well as time in the flight_date column
+# We are preprocessing and converting it to date format before inserting data into database tables
+# 4th column of df_BirdStrikes is the flightDate column. Using as.Date() we convert the MM-DD-YY HH:MM:SS to desired format
+# Make sure that you run this chunk only once, else it will work on already modified data and will give NA values in later stages for date
+
+
+df_BirdStrikes[,4] <- as.character(as.Date(df_BirdStrikes[,4],format = '%m/%d/%Y'))
+
+
+```
+
+
+
+
+<!-- ############### PROCESSING BOOLEAN VALUES FOR WARNING COLUMN ################## -->
+
+```{r}
+# the warning flag has to be of boolean type
+# raw data contained values "N" an "Y" so we assigned boolean values and assigned logical data type to the warning column
+
+df_BirdStrikes[df_BirdStrikes=="N"]<- FALSE
+df_BirdStrikes[df_BirdStrikes=="Y"]<- TRUE
+df_BirdStrikes[,9] <- as.logical(df_BirdStrikes$pilot_warned_flag)
+df_BirdStrikes
+```
+
+
+
+
+<!-- ############### REMOVAL OF MILITARY TYPE AIRLINES ################## -->
+
+```{r}
+
+# Removes Military airlines from the dataframe df_BirdStrikes
+# This ensures that Military airline is not inserted in the database table
+# Testing will be seen ahead using sql chunk when data is inserted into incidents table 
+
+df_BirdStrikes <-df_BirdStrikes[df_BirdStrikes$airline != "MILITARY", ]    
+
+```
+
+
+
+
+<!-- ############### CREATING airports DATAFRAME FROM df_BirdStrikes ################## -->
+
+```{r}
+# Filtered the distinct airports and state from the df_BirdStrikes
+# df.airports contains same columns as that of airports table that we created
+# aid is put as 1 initially, in further code chunks we assign values to it sequentially
+# further in the R notebook, we will use dbWriteTable to append values from df.airports to airports table 
+
+options(sqldf.driver = 'SQLite')
+df.airports_temp <- sqldf::sqldf("select  distinct (airport) as airportName,NULL as airportCode, origin as state 
+                                 from `df_BirdStrikes` ")
+df.airports <- sqldf::sqldf("select   1 as aid, airportName, airportCode, state from `df.airports_temp` ")
+ 
+df.airports
+```
+
+
+```{r}
+# assign an artificial PK using a counter
+n.airports <- nrow(df.airports)
+df.airports[,1] <- seq(1, n.airports)
+```
+
+```{r}
+df.airports
+```
+
+
+
+
+<!-- ############### CREATING conditions DATAFRAME FROM df_BirdStrikes ################## -->
+
+```{r}
+# Filtered the sky_conditions from the df_BirdStrikes
+# df.conditions contains same columns as that of conditions table that we created
+# cid is put as 1 initially, in further code chunks we assign values to it sequentially
+# further in the R notebook, we will use dbWriteTable to append values from df.conditions to conditions table 
+
+
+df.conditions <- sqldf::sqldf("select  distinct (sky_conditions) as weather_condition,
+                              NULL as explanation 
+                              from `df_BirdStrikes` ")
+
+df.conditions <- sqldf::sqldf("select   1 as cid, weather_condition, explanation 
+                              from `df.conditions` ")
+
+n.conditions  <- nrow(df.conditions )
+df.conditions[,1] <- seq(1, n.conditions ) 
+df.conditions
+```
+
+
+
+<!-- ############### CREATING incidents DATAFRAME FROM df_BirdStrikes ################## -->
+
+
+```{r}
+# Filtered the required columns from df_BirdStrikes
+# Also updated origin with aid from airports table using a join
+# For dbWriteTable to work, it is necessary that the datatypes are same as that provided in existing schema.
+# To achieve this ->  origin, flightDate and warning columns have been changed respectively using as.integer(), as.Date() and as.logical()
+# rid is put as 1 initially, in further code chunks we assign values to it sequentially
+# further in the R notebook, we will use dbWriteTable to append values from df.incidents to incidents table 
+
+
+
+df.incidents <- sqldf::sqldf("select 1 as rid, flight_date as flightDate , A.aid as origin, airline, aircraft, flight_phase as flightPhase, altitude_ft as altitude, sky_conditions as conditions ,pilot_warned_flag as warning from `df_BirdStrikes` BS inner join `df.airports` A ON BS.airport = A.airportName")
+
+df.incidents$origin <- as.integer(df.incidents$origin)  
+df.incidents$flightDate <-as.Date(df.incidents$flightDate)
+df.incidents$warning <-as.logical(df.incidents$warning)
+df.incidents 
+
+```
+
+```{r}
+# assign an artificial PK using a counter
+n.incidents  <- nrow(df.incidents )
+df.incidents[,1] <- seq(1, n.incidents )
+```
+
+<!--# conditions column in incident needs to contain values according to the cid in lookup table: conditions#-->
+
+```{r}
+
+# let's link each condition to the correct weather_condition by assigning the FK to the 
+# correct PK
+n.incidents <- nrow(df.incidents)
+# process each row (incidents) one by one
+for (r in 1:n.incidents) {
+  a <- df.conditions$cid[which(df.conditions$weather_condition == df.incidents$conditions[r])]
+  df.incidents$conditions[r] <- a
+}
+df.incidents
+```
+
+
+
+
+<!-- ############### ENABLING BATCH LOADING ################## -->
+
+```{sql connection=con}
+SET GLOBAL local_infile=1;
+```
+
+```{r}
+rownames(df.incidents) <- NULL
+```
+
+```{r}
+# converting warning column as integer type
+df.incidents$warning <- as.integer(df.incidents$warning)
+df.incidents
+```
+
+
+
+<!-- ############### PREPROCESSING: HARMONIZING PHASES TO 4 FIXED PHASES ################## -->
+
+<!-- 
+ASSUMPTION:
+1. We have made an assumption that we need to harmonize phases for the data that has been loaded from CSV.
+2. Any future insertion in database table will be of valid type: ('Inflight','Landing','Takeoff','Unknown')
+3. The check constraint in existing schema checks that future insertions do not contains values apart from above 4 phases
+
+So, we have just harmonized existing phases in database to the 4 specified phases.
+-->
+
+```{r}
+# Finding the different phases available in data
+
+phases<-sqldf('select distinct(flight_phase) phase FROM `df_BirdStrikes`')
+phases
+
+```
+
+```{r}
+# Assigning mappings to the old phases
+
+phases$phase_new <- c('Takeoff','Landing','Landing','Takeoff','Inflight', 'Takeoff','Unknown')
+phases
+```
+
+
+
+```{r}
+# Updating the df.incidents dataframe to contain the new phases
+
+n.incidents <- nrow(df.incidents)
+# process each row (incidents) one by one
+for (r in 1:n.incidents) {
+  a <- phases$phase_new[which(phases$phase == df.incidents$flightPhase[r])]
+  df.incidents$flightPhase[r] <- a
+}
+df.incidents
+```
+
+`
+<!-- ############### USING DBWRITETABLE TO INSERT DATA IN airports ################## -->
+
+```{r}
+# inserts data into airports table
+# append is set to True and overwrite is set to False so that data is appended to existing schema 
+
+dbWriteTable(con, "airports", df.airports, overwrite = F, append = T, row.names = FALSE)
+
+```
+
+```{sql connection=con}
+SELECT * FROM airports
+```
+
+
+<!-- ############### USING DBWRITETABLE TO INSERT DATA IN conditions ################## -->
+
+```{r}
+dbWriteTable(con, "conditions", df.conditions, overwrite = F, append = T, row.names = FALSE)
+```
+
+```{sql connection=con}
+SELECT * FROM conditions
+```
+
+
+<!-- ############### USING DBWRITETABLE TO INSERT DATA IN incidents ################## -->
+
+```{r}
+dbWriteTable(con, 'incidents' , df.incidents, overwrite = FALSE, append = TRUE, row.names = FALSE)
+```
+
+```{sql connection = con}
+SELECT * FROM incidents;
+```
+
+
+
+```{r}
+# disregarding the additional column that gets added
+rownames(df.airports) <- NULL
+rownames(df.incidents) <- NULL
+```
+
+
+<!-- ############### Verification of no existence of  Military airline in database ################## -->
+```{sql connection=con}
+# for Q 1.G
+SELECT * FROM incidents WHERE airline LIKE "%MILITARY%"
+```
+
+
+<!-- ############### Q4: Find the top-10 airlines with the most number of incidents ################## -->
+
+```{sql connection=con}
+SELECT airline, incidentCount from
+(SELECT airline , count(airline) AS incidentCount, 
+rank() over(order by count(airline) desc) rnk,
+dense_rank() over(order by count(airline) desc) dense_rnk,
+row_number() over(order by count(airline) desc) rn_rnk
+FROM incidents 
+GROUP BY airline 
+ORDER BY count(airline) DESC)t
+WHERE t.rnk >= 1 AND t.rnk <= 10
+
+```
+
+
+
+<!-- ############### Q5: Find the flight phase that had an above average number bird strike incidents ################## -->
+
+```{sql connection=con}
+SELECT flightPhase, count(flightPhase) as flightPhase_incident_count 
+FROM incidents 
+GROUP BY flightPhase 
+HAVING count(flightPhase) >  (SELECT avg(count) FROM 
+    (
+    SELECT count(flightPhase) AS Count
+    FROM incidents
+    GROUP BY flightPhase
+    ) AS inc_counts) 
+ORDER BY flightPhase_incident_count DESC
+```
+
+
+
+
+<!-- ############### Q6: Find the maximum number of bird strike incidents by month (across all years) ################## -->
+
+```{sql connection=con}
+
+SELECT Month(flightDate) AS Month , count(Month(flightDate)) as incidentCount_for_Month 
+FROM incidents GROUP BY Month(flightDate) 
+HAVING count(Month(flightDate)) >= (SELECT max(flight_month_count) FROM  
+    (SELECT count(Month(flightDate)) AS flight_month_count 
+     FROM incidents 
+     GROUP BY Month(flightDate)
+    ) AS flightcount)
+ORDER BY Month(flightDate)
+
+
+# An alternative query for the same question:
+
+#SELECT Month(flightDate) as Month, count(Month(flightDate)) as incidentCount_for_Month 
+#from incidents 
+#group by Month(flightDate) 
+#order by count(Month(flightDate)) desc
+#LIMIT 1
+
+```
+
+
+
+
+<!-- ####### Q7: Build a column chart that visualizes the number of bird strikes incidents per year from 2005 to 2011 ####### -->
+
+```{r}
+sqlCmd = "SELECT Year(flightDate) as Yr, count(rid) as NumberOfIncidents 
+          FROM incidents 
+          where Year(flightDate) BETWEEN 2005 AND 2011 
+          group by Year(flightDate) 
+          ORDER BY Yr ASC"
+
+# send the SQL query to the database
+inc_data <- dbGetQuery(con, sqlCmd)
+
+inc_data$Yr
+inc_data$NumberOfIncidents
+
+```
+
+
+```{r}
+# Retrieving the data for column chart
+NumberOfIncidents <- inc_data$NumberOfIncidents
+Year <- inc_data$Yr
+  
+# Plotting the column chart for Number of BirdStrike Incidents vs Year(2005-2011)
+barplot(NumberOfIncidents, names.arg = Year, xlab ="Year", 
+        ylab ="Number of BirdStrikes", col ="blue", 
+        main ="Number of BirdStrike Incidents vs Year(2005-2011)")
+```
+
+
+
+<!-- ############### Q8: Create a stored procedure in MySQL that adds a new incident to the database ################## -->
+
+```{sql connection=con}
+DROP PROCEDURE IF EXISTS insert_incidents
+```
+
+
+```{sql connection=con}
+# This stored procedure inserts data into the incidents table
+# If the data contains a new airport name, first it is inserted into airports table and then associated data is inserted in incidents
+# This stored procedure takes 9 parameters: flightDate, origin, airline, aircraft, flightPhase, altitude, conditions, warning, state
+
+
+CREATE PROCEDURE insert_incidents(IN flightDate DATE ,IN origin TEXT, IN airline TEXT, 
+                                  IN aircraft TEXT, IN flightPhase TEXT,IN altitude TEXT, 
+                                  IN conditions TEXT, IN warning BOOLEAN, IN state TEXT)
+
+BEGIN
+
+DECLARE flightDate1 DATE;
+
+DECLARE origin1 TEXT;
+
+DECLARE airline1 TEXT;
+
+DECLARE aircraft1 TEXT;
+
+DECLARE flightPhase1 TEXT;
+
+DECLARE altitude1 TEXT;
+
+DECLARE conditions1 INT;
+
+DECLARE warning1 BOOLEAN;
+
+DECLARE state1 TEXT;
+
+
+SET flightDate1 = flightDate;
+
+SET airline1 = airline;
+
+SET aircraft1 = aircraft;
+
+SET flightPhase1 = flightPhase;
+
+SET altitude1 = altitude;
+
+SET conditions1 = (SELECT cid FROM conditions WHERE weather_condition = conditions);
+
+SET warning1 = warning;
+
+
+IF NOT EXISTS (SELECT airportName FROM airports WHERE airportName = origin AND state=state) THEN
+  INSERT INTO airports(airportName, airportCode, state) VALUES(origin, "", state);
+END IF;
+
+SET origin1 = (SELECT aid FROM airports WHERE airportName = origin);
+
+INSERT INTO incidents(flightDate, origin, airline, aircraft, flightPhase, altitude, conditions, warning)
+VALUES(flightDate1, origin1, airline1, aircraft1, flightPhase1, altitude1, conditions1, warning1);
+END
+
+```
+
+
+<!-- ######################### TESTING STORED PROCEDURE insert_incidents ##################################--> 
+
+<!-- ###### TEST 1: Using existing airport name to check origin value is correctly inserted #######-->
+
+```{sql connection=con}
+call insert_incidents(curdate(), "MINETA SAN JOSE INTL", "United Airways", "Airplane", "Landing", "4500","No Cloud", FALSE , "California");
+
+```
+<!--Using select to show output of incidents where data record got inserted and verifying origin through airport-->
+
+```{sql connection=con}
+--
+SELECT * FROM incidents WHERE airline LIKE "%United%" AND flightDate = curdate()
+
+```
+
+
+```{sql connection=con}
+SELECT * FROM airports WHERE airportName LIKE "%MINETA%" 
+```
+
+
+
+
+<!-- ###### TEST 2: Using new airport name to check if data is correctly inserted in both airports and incidents #######-->
+
+<!-- Note: there is a check constraint on flightPhase so it will accept only values from: 
+('Inflight','Landing','Takeoff','Unknown') 
+-->
+```{sql connection=con}
+call insert_incidents(curdate(), "Mansi Airport", "Nahata Airways", "Airplane", "Landing", "4500","Some Cloud", TRUE, "Boston");
+
+```
+
+```{sql connection=con}
+SELECT * FROM airports WHERE airportName LIKE "%mansi%";
+
+```
+
+```{sql connection=con}
+SELECT * FROM incidents WHERE airline LIKE "%Nahata%";
+```
+
+
+
+```{r}
+dbDisconnect(con)
+```

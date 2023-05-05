@@ -1,0 +1,93 @@
+<?xml version="1.0" encoding="UTF-8"?>
+
+<!DOCTYPE log[
+ <!ELEMENT log (Page*,Visitor*, Visit*)>
+ <!ELEMENT Page (url)>
+ <!ATTLIST Page pid CDATA #REQUIRED>
+ <!ELEMENT url (#PCDATA)>
+ <!ELEMENT Visitor (ip)>
+ <!ATTLIST Visitor vid CDATA #REQUIRED>
+ <!ELEMENT ip (#PCDATA)>
+ <!ELEMENT Visit (vdate, vtime)>
+ <!ATTLIST Visit tid CDATA #REQUIRED>
+ <!ELEMENT vdate (#PCDATA)>
+ <!ELEMENT vtime (#PCDATA)>
+ <!ATTLIST Visit pid_REF CDATA #REQUIRED>
+ <!ATTLIST Visit vid_REF CDATA #REQUIRED>
+]>
+<log>
+
+
+  
+     <Page pid="1">
+         <url>http://www.linkedin.com/in/mansi-thanki-15721018a/</url>
+     </Page>
+     
+     <Page pid="2">
+         <url>http://mansithanki.github.io/Mansi_Thanki_Portfolio/</url>
+     </Page>
+     
+     <Page pid="3">
+         <url>http://artificium.us/lessons/06.r/l-6-323-load-xml-xmlToDataFrame/l-6-323.html</url>
+     </Page>
+     
+     <Page pid="4">
+         <url>http://artificium.us/lessons/06.r/l-6-328-xml-to-reldb-sqlite/l-6-328.html</url>
+     </Page>
+
+   
+     <Page pid="5">
+         <url>http://artificium.us/lessons/80.xml/l-80-106-ontology-to-xml-patterns/l-80-106.html</url>
+     </Page>
+
+   
+     <Visitor vid="1">
+         <ip>123.45.67.89</ip>
+     </Visitor>
+
+     <Visitor vid="2">
+         <ip>123.456.7.8</ip>
+     </Visitor>
+     
+     <Visitor vid="3">
+         <ip>127.0.0.1</ip>
+     </Visitor>
+     
+     <Visitor vid="4">
+         <ip>255.161.1.8</ip>
+     </Visitor>
+   
+    <Visitor vid="5">
+         <ip>255.101.22.30</ip>
+     </Visitor>
+
+
+
+     <Visit tid="1" pid_REF="1" vid_REF="1">
+         <vdate>07-21-2022</vdate>
+         <vtime>20:03:44</vtime>
+     </Visit>
+     
+     <Visit tid="2" pid_REF="2" vid_REF="2">
+         <vdate>07-22-2022</vdate>
+         <vtime>08:03:34</vtime>
+     </Visit>
+     
+     <Visit tid="3" pid_REF="2" vid_REF="3">
+         <vdate>07-23-2022</vdate>
+         <vtime>12:00:00</vtime>
+     </Visit>
+   
+     <Visit tid="4" pid_REF="4" vid_REF="4">
+         <vdate>07-24-2022</vdate>
+         <vtime>15:16:17</vtime>
+     </Visit>
+   
+      <Visit tid="5" pid_REF="2" vid_REF="3">
+         <vdate>07-25-2022</vdate>
+         <vtime>18:19:20</vtime>
+      </Visit>
+
+     
+     
+</log>

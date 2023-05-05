@@ -1,0 +1,468 @@
+---
+title: "Assignment : Implement Triggers"
+name: Mansi Pravin Thanki (002128043)
+output: html_notebook
+---
+
+```{r}
+library(RSQLite)
+
+fpath = getwd()
+dbfile = "/CourseSyllabus.db"
+
+dbcon <- dbConnect(RSQLite::SQLite(), paste0(fpath,dbfile))
+```
+
+
+```{sql connection=dbcon}
+-- To enable foreign key constraint, run the following PRAGMA command:
+
+PRAGMA foreign_keys = ON
+```
+
+
+```{sql connection=dbcon}
+
+-- Drops the table Unit if it already exists in database
+
+DROP TABLE IF EXISTS Unit
+
+```
+
+```{sql connection=dbcon}
+
+-- Drops the table Course if it already exists in database
+DROP TABLE IF EXISTS Course
+
+```
+
+```{sql connection=dbcon}
+
+-- Drops the table Prerequisites if it already exists in database
+
+DROP TABLE IF EXISTS Prerequisites
+
+```
+
+```{sql connection=dbcon}
+
+-- Drops the table Lesson if it already exists in database
+
+DROP TABLE IF EXISTS Lesson
+```
+
+```{sql connection=dbcon}
+
+-- Drops the table SubjectLookup if it already exists in database
+
+DROP TABLE IF EXISTS SubjectLookup
+```
+
+```{sql connection=dbcon}
+-- Creates table Course with all required constraints
+
+CREATE TABLE Course(
+cnumber TEXT PRIMARY KEY NOT NULL,
+title TEXT NOT NULL,
+lengthinDays INTEGER NOT NULL
+);
+
+```
+
+
+```{sql connection=dbcon}
+
+-- TEST 1: INSERTING VALID VALUES IN COURSE TABLE
+
+INSERT INTO Course (cnumber, title, lengthinDays) VALUES 
+  ("5200","DataBase Management Systems",90),
+  ("5800","Algorithms",120),
+  ("5010","PDP",150),
+  ("5100","FAI",180);
+```
+
+```{sql connection=dbcon}
+Select * from Course;
+```
+<!--
+```{sql connection=dbcon}
+-- commented for the Triggers assignment as not needed 
+
+-- TEST 2: INSERTING INVALID VALUES IN COURSE TABLE
+-- EXPECTED OUTPUT: Should output an Error message: NOT NULL constraint failed
+
+--INSERT INTO Course (cnumber, title, lengthinDays) VALUES 
+--  ("6200","IR",NULL),
+--  ("5500",NULL,120);
+```
+-->
+
+```{sql connection=dbcon}
+
+-- Drops the table Lesson if it already exists in database
+
+DROP TABLE IF EXISTS Lesson
+```
+
+```{sql connection=dbcon}
+
+-- Drops the table SubjectLookup if it already exists in database
+
+DROP TABLE IF EXISTS SubjectLookup
+```
+
+
+```{sql connection=dbcon}
+
+-- Creates a Table SubjectLookup since subject attribute in Lesson is categorical. 
+-- Using a Lookup table makes it more extensible
+
+CREATE TABLE IF NOT EXISTS SubjectLookup (
+  subject_id integer not null primary key,
+  subject_name text NOT NULL
+)
+```
+
+```{sql connection=dbcon}
+
+-- Inserting subject values into the Lookup table 
+
+INSERT INTO SubjectLookup VALUES 
+  (1, "ML"),
+  (2, "SQL"),
+  (3, "R"),
+  (4, "Java")
+```
+
+```{sql connection=dbcon}
+Select * from SubjectLookup
+```
+
+
+```{sql connection=dbcon}
+
+-- Creates a Lesson Table with all required constraints
+
+CREATE TABLE Lesson(
+tid INTEGER PRIMARY KEY NOT NULL,
+title TEXT NOT NULL,
+lengthinHrs INTEGER NOT NULL,
+subject INTEGER NOT NULL,
+foreign key (subject) references SubjectLookup(subject_id)
+
+)
+```
+
+```{sql connection=dbcon}
+
+-- Inserts values in Lesson Table. Note that subject_id from Subjectlookup is used here
+
+INSERT INTO Lesson VALUES
+  (100, "ML Fundamentals", 15, 1),
+  (200, "SQL Foundations", 20, 2),
+  (300, "R Programming", 25, 3),
+  (400, "Java Core Foundations", 30, 4)
+```
+
+```{sql connection=dbcon}
+
+-- SQL query to show the Lesson table and the subject from SubjectLookup associated to it
+
+Select tid, title, lengthinHrs, subject, subject_name from Lesson l INNER JOIN SubjectLookup s ON (l.subject=s.subject_id);
+```
+
+
+```{sql connection=dbcon}
+
+-- Creates the table Unit with all required constraints
+
+CREATE TABLE Unit(
+cnumber TEXT NOT NULL,
+tid INTEGER NOT NULL,
+PRIMARY KEY(cnumber,tid),
+FOREIGN KEY(cnumber) REFERENCES Course(cnumber),
+FOREIGN KEY(tid) REFERENCES Lesson(tid)
+
+)
+
+```
+
+```{sql connection=dbcon}
+
+-- TEST 1 [Valid Values]: Inserts the valid values into the Unit Table 
+
+INSERT INTO Unit (cnumber, tid) VALUES 
+  (5200, 100),
+  (5800,200),
+  (5100,400);
+  
+```
+
+
+```{sql connection=dbcon}
+select * from unit
+```
+
+
+<!--
+```{sql connection=dbcon}
+-- commented for the Triggers assignment as not needed 
+
+-- TEST 2 [Invalid Values]: Inserts the invalid values into the Unit Table 
+-- EXPECTED OUTPUT: Should output Error message:FOREIGN KEY constraint failed
+
+--INSERT INTO Unit (cnumber, tid) VALUES 
+--  (5010,500),
+--  (1010, 5010)
+```
+-->
+
+```{sql connection=dbcon}
+
+-- Drops the table Prerequisites if it already exists in database
+
+DROP TABLE IF EXISTS Prerequisites
+
+```
+
+```{sql connection=dbcon}
+
+--I have made an assumption that if and only if a subject has prerequisite, it is inserted into the table. Hence, if a lesson has no pre-requisite, it is not entered in this table
+
+CREATE TABLE Prerequisites(
+tid INTEGER NOT NULL,
+prereq_id INTEGER NOT NULL,
+Primary Key (tid, prereq_id)
+FOREIGN KEY (tid) REFERENCES Lesson(tid)
+FOREIGN KEY (prereq_id) REFERENCES Lesson(tid)
+CHECK (tid != prereq_id)
+)
+
+```
+
+```{sql connection=dbcon}
+
+-- TEST 1 [VALID VALUES]: Inserting valid values into the Prerequisites Table
+
+INSERT INTO Prerequisites (tid, prereq_id) VALUES 
+  (100, 200),
+  (200,300),
+  (300,400);
+```
+
+```{sql connection=dbcon}
+Select * from Prerequisites
+
+```
+
+
+<!--
+```{sql connection=dbcon}
+-- commented for the Triggers assignment as not needed 
+
+-- TEST 2 [INVALID VALUE]: Testing to see that the table does not take value when prerequisite lesson inserted for a lesson is itself.
+
+-- EXPECTED OUTPUT: Should output Error message: CHECK constraint failed: tid != prereq_id
+
+--INSERT INTO Prerequisites (tid, prereq_id) VALUES 
+--  (400, 400)
+
+```
+
+-->
+
+
+<!-- ###############################  TRIGGER 1  ################################################### -->
+<!-- TRIGGER 1: This trigger constraints the insertion of duplicate lesson for a subject
+1. This trigger is triggered BEFORE the insertion in Lesson table takes place
+2. If a duplicate lesson title is being entered for the same subject, the trigger will not allow insertion
+3. It will throw message : "Cannot have Duplicate lesson name"-->
+
+```{sql connection=dbcon}
+
+DROP trigger IF EXISTS avoid_duplicate_lessons
+```
+
+```{sql connection=dbcon}
+CREATE TRIGGER avoid_duplicate_lessons
+   BEFORE INSERT
+   ON Lesson
+   when exists (select * from Lesson where title = new.title and subject = new.subject)
+BEGIN
+SELECT
+     RAISE (ABORT,'Cannot have Duplicate lesson name');
+END;
+```
+
+<!-- TESTING TRIGGER 1:
+1. Table Lesson already contains an entry ML Fundamentals for subjectid 1
+2. On attempting duplicate insertion, trigger will prohibit from inserting entry into table
+2. It will throw message : "Cannot have Duplicate lesson name"-->
+
+```{sql connection=dbcon}
+INSERT INTO Lesson VALUES
+(800, "ML Fundamentals", 15, 1)
+
+```
+
+```{sql connection=dbcon}
+select * from lesson
+```
+<!--################################  TRIGGER 1 ENDS  ################################################-->
+
+
+
+<!-- ################################   TRIGGER 2   #################################################### -->
+<!-- TRIGGER 2: This trigger constraints the insertion of courses with duration greater than 180 days
+<!-- This trigger is triggered before insertion of a Course with Course length that exceeds 180 days 
+This trigger acts as a constraint to not allow courses that exceed a span of 180 days. 
+It will not allow the insertion and give error message: 'Course cannot be more than 180 days' -->
+
+```{sql connection=dbcon}
+
+DROP trigger IF EXISTS exceeded_course_days
+```
+
+```{sql connection=dbcon}
+
+CREATE TRIGGER exceeded_course_days
+   BEFORE INSERT
+   ON Course
+   WHEN NEW.lengthinDays > 180
+BEGIN
+SELECT
+     RAISE (ABORT,'Course cannot be more than 180 days');
+END;
+```
+
+<!-- TESTING TRIGGER 2:
+1. On attempting  insertion of course with length in days more than 180, trigger will prohibit from inserting entry into table
+2. EXPECTED OUTPUT: It will throw message : "Course cannot be more than 180 days"-->
+
+```{sql connection=dbcon}
+
+INSERT INTO Course (cnumber, title, lengthinDays) VALUES 
+("5600","BSDS",900);
+
+```
+<!-- Checking if course with greater than 180 days was inserted 
+Expected output: Course with length >180 days should not be a part of table-->
+
+```{sql connection=dbcon}
+SELECT * FROM COURSE
+```
+
+<!--################################  TRIGGER 2 ENDS  ################################################-->
+
+
+
+<!-- ##############################  TRIGGER 3  ################################################# -->
+<!--Requirement for Trigger 3:-->
+<!-- Creating lesson_logs table that will store the updates made on lesson table: 
+the old lesson title and new lesson title and the timestamp at which this modification took place-->
+
+```{sql connection=dbcon}
+
+DROP table IF EXISTS lesson_logs
+```
+
+```{sql connection=dbcon}
+
+DROP trigger IF EXISTS log_lessontable_update
+```
+
+```{sql connection=dbcon}
+CREATE TABLE IF NOT EXISTS lesson_logs (
+	id INTEGER PRIMARY KEY,
+	lessonid INTEGER,
+	old_title TEXT,
+	new_title TEXT,
+	update_timestamp TEXT,
+	update_status TEXT
+	
+);
+```
+
+<!-- TRIGGER 3: This trigger inserts the logs of updates on Lesson table in a lesson_logs table-->
+
+<!-- This log_lessontable_update trigger is triggered after the Lesson table is updated.  
+When old lesson title is updated with new title, log_lessontable_update is triggered.
+The trigger inserts into lesson_logs table with the lessonid, old and new values and the timestamp at which update took place
+The lesson_logs holds the old title, the new title, update_status and update_timestamp -->
+
+```{sql connection=dbcon}
+
+CREATE TRIGGER log_lessontable_update 
+   AFTER UPDATE ON Lesson
+   WHEN old.title != new.title
+BEGIN
+	INSERT INTO lesson_logs (
+		lessonid, old_title, new_title, update_timestamp, update_status
+	)
+VALUES
+	 (old.tid, old.title, new.title,DATETIME('NOW'), 'MODIFIED');
+END;
+```
+
+<!-- TESTING TRIGGER 3:
+1. On updating Lesson table entry with a new title, log_lessontable_update will be trigerred
+2. EXPECTED OUTPUT: Log entry of updated lesson will be visible in lesson_logs table-->
+
+
+```{sql connection=dbcon}
+
+UPDATE Lesson SET title = "Updated New ML Fundamentals" where title like "ML Fundamentals"
+
+```
+
+```{sql connection=dbcon}
+select * from lesson_logs
+```
+
+<!-- ############################### TRIGGER 3 ENDS ######################################-->
+
+
+
+<!-- ##############################  TRIGGER 4  ######################################### -->
+<!-- TRIGGER 4: This trigger is triggered AFTER insertion into course table and updates course title to lowercase.
+This trigger converts the title of courses to lower case whenever new entry is inserted in Course table
+-->
+
+```{sql connection=dbcon}
+
+DROP trigger IF EXISTS lower_case_title_trigger
+```
+
+
+```{sql connection=dbcon}
+
+CREATE TRIGGER IF NOT EXISTS lower_case_title_trigger
+  AFTER INSERT ON COURSE
+  BEGIN
+    UPDATE COURSE
+        SET title=LOWER(title) where cnumber= NEW.cnumber;
+  END;
+```
+
+<!-- TESTING TRIGGER 4:
+1. After inserting new Course in Course table, the trigger updates the title to lowercase title
+2. EXPECTED OUTPUT: title of the course will appear in lowercase-->
+
+```{sql connection=dbcon}
+
+INSERT INTO Course (cnumber, title, lengthinDays) VALUES 
+("5900","DATABASE",90);
+
+```
+
+```{sql connection=dbcon}
+SELECT * FROM COURSE
+```
+
+<!-- ############################### TRIGGER 4 ENDS ######################################-->
+
+
+```{r}
+dbDisconnect(dbcon)
+```
+

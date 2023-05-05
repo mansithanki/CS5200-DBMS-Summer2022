@@ -1,0 +1,600 @@
+---
+title: "Indexing Assignment"
+output: html_notebook
+Author1: Mansi Pravin Thanki (thanki.m@northeastern.edu)
+Author2: Hardik Nahata (nahata.h@northeastern.edu)
+
+---
+
+<!-- ################################ Experiments with SQLite ############################################# -->
+# Experiments for MYSQL starts at Line 302 of this notebook 
+
+```{r}
+library(RSQLite)
+file_path = (getwd())
+dbfile = "/sakila.db"
+dbcon <- dbConnect(RSQLite::SQLite(), paste0(file_path,dbfile))
+```
+
+
+<!-- 
+Q1: query on a single table with a WHERE clause that is not the primary key but has an index; 
+same query but no index on that column 
+-->
+
+<!--
+          1. Table used: film table
+          2. key used in where clause: rating -> not a primary key
+          On running the EXPLAIN QUERY Plan:
+          we can observe that -> detail: SCAN film 
+          since a non-primary key is used in where clause for search, SCAN film is displayed.
+          
+          This denotes that the table was scanned and the index is not used
+          
+          This observation matches the information in:                                                                                         http://artificium.us/lessons/60.dbdesign/l-60-611-indexing-sqlite/l-60-611.html
+-->
+
+```{sql connection=dbcon}
+
+EXPLAIN QUERY PLAN
+SELECT * 
+FROM film 
+WHERE rating = 'R'
+
+```
+
+<!-- Experiment with query execution time without indexing -->
+
+<!--
+      Using sys.Time() for noting the start and end time stamp
+      Index has not been created on rating column
+      Time for execution can be seen on the R console
+-->
+
+```{r connection = dbcon}
+start_time <- Sys.time()
+
+dbGetQuery(dbcon,
+  "select * from film where rating = 'R';")
+
+
+end_time <- Sys.time()
+
+print("For Q1, execution speed for non-indexed version:")
+end_time - start_time
+
+```
+
+
+
+# creating an index on film table on the column of rating
+```{sql connection=dbcon}
+CREATE INDEX filmRating 
+    ON film (rating);
+```
+
+
+<!--
+          
+          On running the EXPLAIN QUERY Plan:
+          we can observe that -> detail: SEARCH film USING INDEX filmRating (rating=?)
+          since a non-primary key is used in where clause for search, SCAN film is displayed.
+          
+          This denotes that the table was searched and the index is used
+          
+          This observation matches the information in:                                                                                         http://artificium.us/lessons/60.dbdesign/l-60-611-indexing-sqlite/l-60-611.html
+-->
+
+```{sql connection=dbcon}
+EXPLAIN QUERY PLAN
+select * from film where rating = 'R'
+
+```
+
+<!--
+      Using sys.Time() for noting the start and end time stamp
+      Index has now been created on rating column
+      Time for execution can be seen on the R console
+      
+      It can be observed that the EXECUTION SPEED OF INDEXED VERSION IS MUCH MORE FASTER THAN THE NON-INDEXED VERSION
+-->
+
+```{r connection=dbcon}
+start_time <- Sys.time()
+
+dbExecute(dbcon,
+  "select * from film where rating = 'R';")
+
+end_time <- Sys.time()
+print("For Q1, execution speed for indexed version:")
+end_time - start_time
+```
+
+# dropping the filmRating index
+```{sql connection=dbcon}
+drop index filmRating
+
+```
+
+
+<!---------- Q1 ENDS --------------->
+
+
+<!-- 
+#Q2: query with a join on at least three tables (no secondary indexes; no where clause other than join clause) 
+
+
+First, we are checking the already available indexed columns in database using the below query -->
+
+```{sql connection=dbcon}
+SELECT
+   `type`, 
+   `name`, 
+   `tbl_name`, 
+   `sql`
+  FROM sqlite_master
+WHERE `type` = 'index';
+
+```
+
+<!--
+          1. Table used: film_actor, film, film_category  table
+         
+-->
+
+
+```{sql connection=dbcon}
+select * from FILM_ACTOR FA inner join FILM F on FA.film_id= F.film_id inner join Film_Category FC on F.film_id=FC.film_id
+```
+<!--
+          On running the EXPLAIN QUERY Plan:
+          we can observe that -> 
+          detail: 
+          SCAN FA 
+          SEARCH F USING INTEGER PRIMARY KEY (rowid=?)
+          SEARCH FC USING INDEX sqlite_autoindex_film_category_1 (film_id=?)	
+
+          This denotes that:
+          1. Film_actor table was scanned without considering any index, and 
+          2. Film,Film_Category table were searched using index
+          
+          This observation matches the information in:                                                                                         http://artificium.us/lessons/60.dbdesign/l-60-611-indexing-sqlite/l-60-611.html
+-->
+
+
+```{sql connection=dbcon}
+EXPLAIN QUERY PLAN
+select * from FILM_ACTOR FA inner join FILM F on FA.film_id= F.film_id inner join Film_Category FC on F.film_id=FC.film_id
+
+```
+
+<!---------------- Q2 Ends ---------------->
+
+
+<!-- Q3: query on a single table with group by having a where clause that involves only the primary key column-->
+
+<!--      1. Table used: customer table
+          2. key used in where clause: customer_id -> is a primary key
+          3. group by: active
+          
+-->
+
+```{sql connection=dbcon}
+SELECT *
+FROM customer
+WHERE customer_id >=1 AND customer_id<=100
+GROUP BY active
+
+```
+
+<!-- 
+          On running the EXPLAIN QUERY Plan:
+          we can observe that -> detail: 
+          1. SEARCH customer USING INTEGER PRIMARY KEY (rowid>? AND rowid<?)
+          -  This denotes that the customer table was searched using the index on primary key
+          
+          2. USE TEMP B-TREE FOR GROUP BY:
+          -  SQLite uses temporary B+ trees to sort the output rows when any select query contains order by, group by or distinct                 clause. Since, we have group by in the query, SQLite used the temporary B+ Tree
+-->
+
+```{sql connection=dbcon}
+EXPLAIN QUERY PLAN
+SELECT *
+FROM customer
+WHERE customer_id >=1 AND customer_id<=100
+GROUP BY active
+```
+
+
+<!-- Q3 Ends --->
+
+<!-- Q4: one additional experiment of your choice: any query, any index use -->
+
+<!-- 
+SORTING: 
+We are conducting experiment on the execution speed when index is involved and when index is not involved during sorting.
+
+          1. Table used: actor table
+          2. key used in where clause: actor_id 
+          3. ordering in descending order of first_name
+          
+-->
+
+```{sql connection=dbcon}
+select * from actor
+   where actor_id between 1 and 100
+   order by first_name desc;
+   
+```
+
+<!-- 
+          On running the EXPLAIN QUERY Plan:
+          we can observe that -> detail: 
+          1. SCAN actor
+          -  This denotes that the actor table was scanned and index was not considered 
+          
+          2. USE TEMP B-TREE FOR ORDER BY:
+          -  SQLite uses temporary B+ trees to sort the output rows when any select query contains order by, group by or distinct                 clause. Since, we have group by in the query, SQLite used the temporary B+ Tree
+-->
+
+```{sql connection=dbcon}
+explain query plan
+select * from actor
+order by first_name desc
+   
+```
+
+<!--
+      Using sys.Time() for noting the start and end time stamp
+      Index has not been created on first_name column
+      Time for execution can be seen on the R console
+-->
+
+```{r connection=dbcon}
+start_time <- Sys.time()
+
+dbExecute(dbcon,
+  "select * from actor
+   where actor_id between 1 and 100
+   order by first_name desc;")
+
+end_time <- Sys.time()
+print("For Q4, execution speed for non-indexed version:")
+end_time - start_time
+```
+
+# creating index on the first_name as fName
+
+```{sql connection=dbcon}
+CREATE INDEX fName 
+    ON actor (first_name);
+```
+
+<!--
+      Using sys.Time() for noting the start and end time stamp
+      Index has now been created on first_name column
+      Time for execution can be seen on the R console
+      
+      It can be observed that the EXECUTION SPEED OF INDEXED VERSION IS SLIGHTLY FASTER THAN THE NON-INDEXED VERSION
+-->
+
+```{r connection=dbcon}
+start_time <- Sys.time()
+
+dbExecute(dbcon,
+  "select * from actor
+   where actor_id between 1 and 100
+   order by first_name desc;")
+
+end_time <- Sys.time()
+print("For Q4, execution speed for indexed version:")
+end_time - start_time
+```
+# droping the created index
+
+```{sql connection=dbcon}
+drop index if exists fName
+```
+
+# disconnecting dbcon
+```{r}
+dbDisconnect(dbcon)
+
+```
+
+<!-- ################################ Experiments with MYSQL ############################################# -->
+
+```{r}
+rm(list = ls())
+library(DBI)
+library(RMySQL)
+library(sqldf)
+mysqlcon<-dbConnect(MySQL(),host="localhost",port=3306,dbname='sakila',user="root",password="root12345")
+
+```
+
+<!-- 
+Q1: query on a single table with a WHERE clause that is not the primary key but has an index; 
+same query but no index on that column 
+-->
+
+<!--
+          1. Table used: film table
+          2. key used in where clause: rating -> not a primary key
+          3. Execution speed for non-indexed rating version is printed in the R Console
+-->
+
+```{r connection = mysqlcon}
+
+start_time <- Sys.time()
+
+suppressWarnings(dbGetQuery(mysqlcon,
+  "select * from film where rating = 'R';"))
+end_time <- Sys.time()
+print("For Q1, (MYSQL) execution speed for non-indexed version:")
+print(end_time - start_time)
+```
+
+<!--
+          
+          On running the query EXPLAIN:
+          we can observe that -> 
+          Since there are no keys, possible_keys and key and key_len are empty.
+          It denotes that no relevant index exists were found on the table
+          
+-->
+
+
+```{sql connection=mysqlcon}
+explain
+select * from film where rating = 'R';
+```
+
+
+# creating index on rating as filmRating
+
+```{sql connection=mysqlcon}
+CREATE INDEX filmRating 
+    ON film (rating);
+```
+
+<!--
+          
+          On running the query EXPLAIN after creating index:
+          we can observe that -> 
+          Since we created index on rating, the  keys, possible_keys and key and key_len are filled with 
+          filmRating values and correct key length.
+          
+          Extra column also now denotes that index condition is being used
+          
+          
+-->
+
+```{sql connection=mysqlcon}
+EXPLAIN 
+select * from film where rating = 'R'
+
+```
+
+<!--
+          
+          Execution speed for indexed rating version is printed in the R Console
+-->
+
+```{r connection = mysqlcon}
+
+start_time <- Sys.time()
+
+suppressWarnings(dbGetQuery(mysqlcon,
+  "select * from film where rating = 'R';"))
+end_time <- Sys.time()
+print("For Q1, (MYSQL) execution speed for indexed version:")
+print(end_time - start_time)
+```
+
+# dropping filmRating index
+```{sql connection=mysqlcon}
+drop index filmRating on film
+```
+
+<!---- Q1 ENDS----->
+
+<!--
+Q2: query with a join on at least three tables (no secondary indexes; no where clause other than join clause) 
+
+1. Tables used: film_actor, film, film_category table
+
+-->
+
+
+```{sql connection=mysqlcon}
+select * from FILM_ACTOR FA inner join FILM F on FA.film_id= F.film_id inner join Film_Category FC on F.film_id=FC.film_id
+```
+
+<!--
+          On running the query EXPLAIN :
+          we can observe that -> 
+          
+          possible_keys: show the possible keys used for indexing in all three tables
+          
+          key: shows the actual key that was used by MySql for indexing
+          key values can be seen for Film and Film_Actor table
+
+          This denotes that:
+          1. Film_Category table was scanned without considering any index, and 
+          2. Film,Film_Actor table were searched using index
+          
+          Unlike in experiment for SQLite, where FA was scanned without using index, here index is used.
+-->
+
+```{sql connection=mysqlcon}
+EXPLAIN 
+select * from FILM_ACTOR FA inner join FILM F on FA.film_id= F.film_id inner join Film_Category FC on F.film_id=FC.film_id
+
+```
+
+<!--
+          Using sys.Time() for noting the start and end time stamp
+          Time for execution can be seen on the R console
+-->
+```{r connection = mysqlcon}
+
+start_time <- Sys.time()
+
+suppressWarnings(dbGetQuery(mysqlcon,
+  "select * from FILM_ACTOR FA inner join FILM F on FA.film_id= F.film_id inner join Film_Category FC on F.film_id=FC.film_id"))
+end_time <- Sys.time()
+print("For Q2, MySQl version execution speed:")
+print(end_time - start_time)
+```
+
+
+<!------ Q2 ENDS ----->
+
+
+<!-- Q3: query on a single table with group by having a where clause that involves only the primary key column-->
+
+<!--      1. Table used: customer table
+          2. key used in where clause: customer_id -> is a primary key
+          3. group by: active
+          
+-->
+
+```{sql connection=mysqlcon}
+SELECT *
+FROM customer
+WHERE customer_id >=1 AND customer_id<=100
+GROUP BY active
+```
+
+<!-- 
+          On running the query EXPLAIN:
+          we can observe that:
+          key: contains PRIMARY
+          -  This denotes that the customer table was searched using the index on primary key
+          
+          In Extra column: Using where; Using temporary
+          - This denotes that MySQL used temporary table in memory for the given query
+-->
+
+
+```{sql connection=mysqlcon}
+EXPLAIN 
+SELECT *
+FROM customer
+WHERE customer_id BETWEEN 1 AND 100
+GROUP BY active
+```
+
+<!--
+          Using sys.Time() for noting the start and end time stamp
+          Time for execution can be seen on the R console
+-->
+
+```{r connection=mysqlcon}
+start_time <- Sys.time()
+
+suppressWarnings(dbGetQuery(mysqlcon,
+  "SELECT *
+FROM customer
+WHERE customer_id BETWEEN 1 AND 100
+GROUP BY active"))
+end_time <- Sys.time()
+print("For Q2, MYSQL version execution speed:")
+print(end_time - start_time)
+```
+
+<!-- Q3 Ends --->
+
+<!-- Q4: one additional experiment of your choice: any query, any index use -->
+
+<!-- 
+SORTING: 
+We are conducting experiment on the execution speed when index is involved and when index is not involved during sorting.
+
+          1. Table used: actor table
+          2. key used in where clause: actor_id
+          3. ordering in descending order of first_name
+
+          Using sys.Time() for noting the start and end time stamp
+          Index has now been created on first_name column
+          Time for execution can be seen on the R console
+-->
+```{r connection=mysqlcon}
+start_time <- Sys.time()
+
+suppressWarnings(dbGetQuery(mysqlcon,
+  "select * from actor
+   where actor_id between 1 and 100
+   order by first_name desc;"))
+end_time <- Sys.time()
+print("For Q4 (Mysql), execution speed for non-indexed version")
+print(end_time - start_time)
+```
+
+<!-- 
+          On running the EXPLAIN QUERY Plan:
+          we can observe that -> detail: 
+          key: contains primary
+          -  This denotes that the actor table was searched using the index 
+          
+          In Extra column:
+          - This denotes that MySQL used filesort for the ordering of the files
+-->
+
+```{sql connection=mysqlcon}
+EXPLAIN
+select * from actor
+   where actor_id between 1 and 100
+   order by first_name desc;
+```
+
+# creating index on first_name column of actor as fName
+```{sql connection=mysqlcon}
+CREATE  INDEX fName 
+    ON actor (first_name);
+```
+
+<!--
+      Using sys.Time() for noting the start and end time stamp
+      Index has now been created on first_name column
+      Time for execution can be seen on the R console
+      
+      It can be observed that the EXECUTION SPEED OF INDEXED VERSION IS MUCH MORE FASTER THAN THE NON-INDEXED VERSION
+-->
+
+```{r connection=mysqlcon}
+start_time <- Sys.time()
+
+suppressWarnings(dbGetQuery(mysqlcon,
+  "select * from actor
+   where actor_id between 1 and 100
+   order by first_name desc;"))
+end_time <- Sys.time()
+print("For Q4 (Mysql), execution speed for indexed version")
+print(end_time - start_time)
+```
+# dropping the created index
+```{sql connection=mysqlcon}
+drop index fName on actor
+```
+
+
+<!---
+
+Observations from all experiments:
+
+1. Indexing improved the speed of query execution in both SQLite and MYSQL
+
+2. MYSQL had a better performance in terms of speed as compared to SQLite while considering joins on 3 tables
+
+3. Indexing on primary key displayed faster execution
+
+4. For Joins, sqlite and mysql considered different table for indexing 
+
+-->
+
+# disconnecting from mysqlcon
+```{r connection=mysqlcon}
+dbDisconnect(mysqlcon)
+```
